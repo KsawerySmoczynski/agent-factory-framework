@@ -1,7 +1,7 @@
 # Refined Prompt Template
 
 > This file defines the mandatory structure for every refined specification.
-> All headers must be populated. No header may be left empty or marked "TBD."
+> All headers must be addressed. Headers that do not apply to this feature may be marked "N/A — [justification]". "TBD" is still not allowed — either populate or declare not applicable.
 > The Spec Refiner (Step 2) fills this template after completing the interrogation phase.
 
 ---
@@ -16,7 +16,7 @@
 
 ## 1. Functional Requirements
 
-> Each requirement is numbered, atomic (one behavior), and testable (there exists a scenario
+> **Always mandatory.** Each requirement is numbered, atomic (one behavior), and testable (there exists a scenario
 > that distinguishes "met" from "not met"). Use the format below.
 
 **FR-1:** [Requirement statement]
@@ -30,6 +30,7 @@
 ## 2. Non-Functional Requirements
 
 > Each requirement has a measurable threshold. "Fast" is not a requirement.
+> **N/A is appropriate** when no quantitative performance constraints exist for this feature.
 
 **NFR-1:** [Requirement statement with numeric threshold]
 - **Metric:** [What is measured — e.g., p99 latency, peak memory, RPS]
@@ -43,6 +44,7 @@
 ## 3. Interface Boundary Expectations
 
 > For each module this feature interacts with.
+> **N/A is appropriate** for changes internal to a single module with no cross-module interactions.
 
 ### Boundary: [This Feature] ↔ [Module Name]
 
@@ -57,6 +59,7 @@
 ## 4. Scope Exclusions
 
 > What this feature explicitly does NOT do. Each exclusion prevents scope creep and anchors negative test space.
+> **Can be brief or N/A** for tightly scoped changes where the boundary is self-evident.
 
 - **EX-1:** [Explicit exclusion statement — e.g., "This feature does not handle batch processing. Batch mode is a separate feature."]
 - **EX-2:** [...]
@@ -65,7 +68,7 @@
 
 ## 5. Acceptance Criteria
 
-> Human-level "definition of done." These map onto but are not identical to tests.
+> **Always mandatory.** Human-level "definition of done." These map onto but are not identical to tests.
 
 - **AC-1:** [Acceptance criterion — e.g., "A user can submit a query and receive results within the latency budget under normal load."]
 - **AC-2:** [...]
