@@ -1,8 +1,10 @@
-# Step 1: Raw Input
+# Step 1: Raw Input (Human)
 
 **Input:** Nothing formal.
 
-**Output:** `raw_prompt.md`
+**Output:** `.current_session/raw_prompt.md`
+
+This step is entirely manual — no agent involved. Create the `.current_session/` directory and write `raw_prompt.md` there.
 
 Brain dump. Unordered, messy, stream-of-consciousness. All requirements, constraints, behaviors, edge cases, performance expectations, aesthetic preferences, things you're unsure about. Don't self-edit. The goal is maximum information extraction from your head, not coherence. Coherence is the next step's job.
 
@@ -10,9 +12,11 @@ Include anything that *might* matter: related components in the existing system,
 
 # Step 2: Specification Refinement
 
-**Input:** `raw_prompt.md`, `refined_prompt_template.md` (predefined headers), surrounding system context (relevant `__init__.py` manifests, interface files of adjacent modules).
+**Input:** `.current_session/` (containing `raw_prompt.md`), `refined_prompt_template.md` (predefined headers), surrounding system context (relevant `__init__.py` manifests, interface files of adjacent modules).
 
-**Output:** `refined_prompt.md`
+**Output:** `refined_prompt.md`, question artifacts — all written to `.current_session/`, `index.md` initialized and populated.
+
+**Session bootstrap:** This is the first agent step. Initialize `index.md` in `.current_session/` — register `raw_prompt.md` as the first entry, then append your own artifacts as you produce them.
 
 **Agent role:** Spec Refiner
 
@@ -20,7 +24,7 @@ Include anything that *might* matter: related components in the existing system,
 
 The agent's job is adversarial clarification. It receives the raw prompt and the template headers, then:
 
-1. **Gap analysis.** Identify every header the template demands that the raw prompt does not address. Surface these as explicit questions, not assumptions.
+1. **Gap analysis.** Identify every header the template demands that the raw prompt does not address. Surface these as explicit questions, not assumptions. Template headers that do not apply to this feature may be marked "N/A — [justification]".
 2. **Ambiguity detection.** For each requirement stated in the raw prompt, ask: could two competent engineers read this and build different things? If yes, force a disambiguation question.
 3. **Conflict detection.** Flag requirements that contradict each other or contradict known properties of adjacent modules (drawn from provided context).
 4. **Fill the template.** Only after the Q&A round resolves, the agent populates `refined_prompt.md` against the predefined headers.
@@ -29,19 +33,21 @@ The agent learns across sessions: it accumulates knowledge about *which question
 
 **What the refined prompt must contain (minimum viable headers):**
 
-- Functional requirements (what it does)
-- Non-functional requirements (latency, throughput, resource bounds)
-- Interface boundary expectations (what modules it talks to, via what contracts)
-- Scope exclusions (what it explicitly does *not* do)
-- Acceptance criteria (how we know it's done)
+- Functional requirements (what it does) — always mandatory
+- Non-functional requirements (latency, throughput, resource bounds) — N/A when no quantitative performance constraints exist
+- Interface boundary expectations (what modules it talks to, via what contracts) — N/A for changes internal to a single module
+- Scope exclusions (what it explicitly does *not* do) — can be brief or N/A for tightly scoped changes
+- Acceptance criteria (how we know it's done) — always mandatory
 
 # Step 3: Structural Analysis
 
-**Input:** `refined_prompt.md`, relevant codebase context.
+**Input:** `.current_session/` (containing `refined_prompt.md` and prior artifacts), relevant codebase context.
 
-**Output:** `structural_analysis.md`
+**Output:** `structural_analysis.md` — written to `.current_session/`, `index.md` updated.
 
 **Decision maker:** Human approves structural understanding before interface design proceeds.
+
+**Scope calibration:** If the refined prompt describes a change confined to a single module with clear boundaries, produce a brief structural note (1-2 paragraphs) instead of the full integration matrix + risk register + data flow diagrams. State the chosen mode (LIGHT or FULL) and justification at the top of output.
 
 This step has two modes depending on context:
 
@@ -49,23 +55,27 @@ This step has two modes depending on context:
 
 **Refactor:** The agent additionally receives the existing implementation. It performs a **throwaway exploratory pass** — reading code, tracing call graphs, identifying coupling and tangling. The exploratory implementation is discarded; its only purpose is to produce the structural analysis document with added insight: what's tangled, what's clean, what can be preserved, what must be rebuilt.
 
-In both cases, the output is the same shape: a document describing the structural landscape the interface design must navigate.
+In both cases, the output is the same shape: a document describing the structural landscape the interface design must navigate. In LIGHT mode, the output is a brief structural note covering proposed changes and any non-obvious risks.
 
 # Step 4: Interface Design
 
-**Input:** `refined_prompt.md`, `structural_analysis.md`, Tier 0 context of adjacent modules.
+**Input:** `.current_session/` (containing `refined_prompt.md`, `structural_analysis.md` if present, and prior artifacts), Tier 0 context of adjacent modules.
 
-**Output:** Module interface files (`base.py`), stub implementations raising `NotImplementedError`, updated `__init__.py` manifests. Delivered as a **merge request**.
+**Output:** Module interface files (`base.py`), stub implementations raising `NotImplementedError`, updated `__init__.py` manifests — written to their codebase locations. Thinking artifacts written to `.current_session/`, `index.md` updated. Part of the **requirements phase MR**.
 
 **Agent role:** Interface Designer
 
 **Decision maker:** Human reviews and merges.
+
+If structural analysis was reduced (LIGHT mode) or absent, the interface designer works from `refined_prompt.md` alone, deriving module boundaries directly from the specification.
 
 The agent designs the public surface of the module(s). Principles:
 
 - **Composition over inheritance.** Always.
 - **Objects hold state; methods orchestrate pure functions.** The object layer is a thin stateful shell. All logic lives in a fully functional API underneath.
 - **Encapsulation is non-negotiable.** If it's not in the public interface, it doesn't exist to other modules.
+
+**Deliberate overspecification of docstrings:** Docstrings at this step are intentionally verbose — full behavioral contracts, pre/post-conditions, edge case expectations, acceptance criteria cross-references. This is by design. These serve as the implementation blueprint for Step 6. Step 8 will trim them to match actual complexity after implementation is complete.
 
 **Module structure convention:**
 
@@ -93,9 +103,9 @@ Stub implementations must be syntactically valid, type-annotated, and raise `Not
 
 # Step 5: Specification Tests
 
-**Input:** `refined_prompt.md`, interface files (`base.py`), stubs.
+**Input:** `.current_session/` (prior thinking artifacts) and interface files, stubs from their codebase locations.
 
-**Output:** Test suite. Delivered as a **merge request**.
+**Output:** Test suite written to codebase test directories. Thinking artifacts (traceability matrix) written to `.current_session/`, `index.md` updated. Part of the **requirements phase MR**.
 
 **Agent role:** Test Formalizer
 
@@ -103,19 +113,23 @@ Stub implementations must be syntactically valid, type-annotated, and raise `Not
 
 These tests formalize the requirements stated in the refined prompt. They are written **before any implementation exists** and must pass against any correct implementation. They are the *contract*, not the verification of a specific solution.
 
+**Anti-pattern:** Do NOT write integration contract tests that merely verify type shapes already enforced by mypy, Pydantic validators, or linter rules. Integration tests must test semantic contracts — behavioral expectations that static analysis cannot verify.
+
 Two categories, with fundamentally different failure semantics:
 
 ### 5a. Behavioral Tests → On failure: fix the implementation
 
 Unit tests, property-based tests, and mutation tests. These encode: "given input X, module produces output Y" or "for all inputs satisfying predicate P, output satisfies predicate Q."
 
-- **Unit tests:** Concrete input/output pairs derived directly from requirements.
-- **Property-based tests:** Invariants that must hold across input distributions. These catch the cases the spec author didn't think of.
-- **Mutation tests:** Verify that the test suite is actually discriminating — that small perturbations to a correct implementation cause test failures. A test suite that passes all mutations is vacuous.
+- **Unit tests:** Concrete input/output pairs derived directly from requirements. Always produced.
+- **Property-based tests:** Invariants that must hold across input distributions. These catch the cases the spec author didn't think of. Contextual — skip with a single-sentence justification if no invariants apply.
+- **Mutation tests:** Verify that the test suite is actually discriminating — that small perturbations to a correct implementation cause test failures. A test suite that passes all mutations is vacuous. Contextual — skip with a single-sentence justification if not warranted.
 
 ### 5b. Integration Contract Tests → On failure: escalate to human
 
 These encode: "module A communicates with module B via interface W, sending data shaped like X and receiving data shaped like Y."
+
+**If no cross-module boundaries exist, skip integration tests entirely.** A single module with no external dependencies does not need integration contract tests.
 
 **Why the escalation difference matters:** A behavioral test failure means the implementation is wrong relative to a fixed interface. An integration contract failure means the *interfaces themselves* are inconsistent — the architectural design has a flaw. Agents should not attempt to fix architectural flaws autonomously. The cost of a wrong architectural patch compounds across the entire system. Escalate early; don't force a rewrite.
 
@@ -123,13 +137,17 @@ These encode: "module A communicates with module B via interface W, sending data
 
 # Step 6: Implementation
 
-**Input:** `refined_prompt.md`, interface files, test suite, structural analysis.
+**Input:** `.current_session/` (all prior thinking artifacts).
 
-**Output:** Working implementation passing all Step 5 tests. Delivered as a **merge request**.
+**Output:** Working implementation passing all Step 5 tests, semantic diff. Thinking artifacts written to `.current_session/`, `index.md` updated. Part of the **implementation phase MR**.
 
 **Agent role:** Implementer (one per module in cross-module features)
 
 **Decision maker:** Human reviews and merges.
+
+**Minimal Diff Principle:** Produce the smallest code change that satisfies the specification and passes all tests. Do not add abstractions for hypothetical future use, create utility functions for one-off operations, or add error handling for scenarios not required by the spec. Docstrings from Step 4 interfaces are the implementation blueprint — do not add new documentation beyond what the interfaces already specify.
+
+**Graceful handling of missing artifacts:** If structural analysis is absent or light, work from `refined_prompt.md` and interfaces. If specific test categories were skipped, focus on passing the tests that exist.
 
 ### Tiered Context Model
 
@@ -181,13 +199,15 @@ This creates an auditable trail reviewable at the *intent* level. It is the subs
 
 # Step 7: Implementation-Derived Tests
 
-**Input:** Completed implementation from Step 6, existing test suite from Step 5.
+**Input:** `.current_session/` and all prior artifacts including completed implementation and Step 5 tests.
 
-**Output:** Extended test suite. Delivered as a **merge request**.
+**Output:** Extended test suite. Thinking artifacts written to `.current_session/`, `index.md` updated. Part of the **implementation phase MR**.
 
 **Agent role:** Test Extender
 
 **Decision maker:** Human reviews and merges.
+
+**Scope calibration:** If the implementation is trivial (single function, no branching logic, no state management, no complex error paths), produce only edge case tests. Skip internal unit tests, performance regression, and change sensitivity categories with brief justification. This step may be skipped entirely for truly trivial implementations with justification written to `.current_session/`.
 
 Step 5 tests verify the software meets the *specification*. Step 7 tests verify properties of the *actual implementation* — paths, edge cases, and behaviors that only become visible after the code exists.
 
@@ -202,9 +222,9 @@ These include:
 
 # Step 8: Documentation & Reconciliation
 
-**Input:** All prior artifacts.
+**Input:** `.current_session/` (all prior thinking artifacts), implementation files and tests.
 
-**Output:** Updated documentation, optional refactoring MR. Delivered as a **merge request**.
+**Output:** Updated documentation, reconciliation artifacts. Written to `.current_session/`, `index.md` updated. Part of the **implementation phase MR**.
 
 **Agent role:** Reconciler
 
@@ -213,6 +233,10 @@ These include:
 The agent performs a full read-through of the completed work and:
 
 1. **Enhances `__init__.py` manifests** to reflect what was actually built, not what was planned. The Tier 0 map must be accurate post-implementation.
-2. **Updates interface documentation and docstrings** to match the implementation's actual behavior, especially where implementation decisions refined ambiguities in the spec.
+2. **Trims docstrings to match actual complexity.** Step 4 deliberately overspecified docstrings to serve as implementation blueprints. Now that implementation is complete, trim them to match actual implementation complexity — remove redundant pre/post-conditions that merely restate what the code obviously does, align verbosity with the code's actual complexity, improve information density. This is the entropy-reduction pass.
 3. **Identifies spec-vs-result mismatches.** Where did the implementation deviate from the refined prompt? These deviations are not necessarily bugs — they're learning. Document them explicitly so future pipeline runs benefit.
 4. **Proposes refactoring candidates.** Functions that should be extracted and generalized for reuse across implementations. Utility files that should be combined or split. Dead code. But: **does not execute refactors in this step.** Proposals only, as a separate MR or annotated document. Refactoring is a separate pipeline run.
+
+**Proportionality:** Scale output to feature complexity. For small features: `SPEC_VS_RESULT.md` can be a brief table. Skip `REFACTOR_PROPOSALS.md`, `oncall_notes.md`, and `STRUCTURAL_RETROSPECTIVE.md` if nothing warrants them. `PIPELINE_FEEDBACK.md` is always produced (even if brief) — it feeds process improvement.
+
+**Non-duplication:** Do not reproduce analysis already present in `.current_session/` artifacts. Reference them by filename and section. Your job is to reconcile and surface gaps, not to summarize what already exists.

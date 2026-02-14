@@ -1,7 +1,6 @@
 # Prompt template: Step 7 — Implementation-Derived Tests
 
-**Agent role:** Test Extender  
-**Orchestrator placeholders:** `{{IMPLEMENTATION_BRANCH}}`, `{{STEP5_TESTS_PATH}}`
+**Agent role:** Test Extender
 
 ---
 
@@ -11,14 +10,40 @@ Step 5 tests are derived from *what we want* (specification). Your tests are der
 
 You extend. You never duplicate, replace, or modify Step 5 tests. They are upstream contracts, immutable during this step (same invariant as Step 6: tests from Step 5 flow forward; backward transitions require human-initiated rollback to Step 4/5).
 
-## Inputs
+Steps 1-5 produce a single MR (requirements definition phase). Steps 6-8 produce a single MR (implementation phase).
+
+## Input Artifacts
+
+Read the `.current_session/` directory and `index.md` to discover prior thinking artifacts. You also receive code and test files from their codebase locations.
+
+**From `.current_session/` (thinking artifacts):**
 
 | Artifact | Source | Purpose |
 |---|---|---|
-| Full Tier 2 source of implemented module(s) | `{{IMPLEMENTATION_BRANCH}}` | Primary analysis target — you have complete access to internals |
-| Step 5 test suite | `{{STEP5_TESTS_PATH}}` | Coverage baseline; defines what you must *not* duplicate |
-| `refined_prompt.md` | Prior step | Distinguishes intentional design from accidental behavior |
-| Semantic diff from Step 6 | Prior step | Declares *what was built and why* — your tests cover these decisions |
+| `refined_prompt.md` | Step 2 | Distinguishes intentional design from accidental behavior |
+| Semantic diff from Step 6 | Step 6 | Declares *what was built and why* — your tests cover these decisions |
+| `structural_analysis.md` | Step 3 | May be LIGHT or absent — informs scope of testing |
+
+**From codebase locations (code/test files from Steps 4-6):**
+
+| Artifact | Source | Purpose |
+|---|---|---|
+| Full Tier 2 source of implemented module(s) | Step 6 | Primary analysis target — you have complete access to internals |
+| Step 5 test suite | Step 5 | Coverage baseline; defines what you must *not* duplicate |
+
+## Scope Calibration
+
+Assess what exists in `.current_session/` and determine appropriate depth:
+
+- **If the implementation is trivial** (single function, no branching logic, no state management, no complex error paths): produce only edge case tests (category 7.2). Skip internal unit tests, performance regression, and change sensitivity categories with brief justification. This step may be skipped entirely for truly trivial implementations — write a brief justification to `.current_session/` and update `index.md`.
+- **If the implementation has moderate complexity** (some branching, limited state): produce edge case tests and error path tests. Skip performance regression and change sensitivity if not warranted.
+- **If the implementation is complex** (multiple code paths, state management, error handling chains): produce full coverage across all applicable categories.
+
+State your scope assessment at the top of your output.
+
+## Non-Duplication Rule
+
+Do not reproduce information already present in `.current_session/` artifacts. Reference prior artifacts by filename and section. Your output should contain only NEW analysis, decisions, or artifacts.
 
 ## Process
 
@@ -27,11 +52,11 @@ You extend. You never duplicate, replace, or modify Step 5 tests. They are upstr
 3. **Branch coverage gap analysis.** For every `if/else`, `try/except`, `match/case`, loop boundary: verify Step 5 exercises both sides. Where it doesn't, you write the missing path.
 4. **Write tests** per the categories below. Tests for internals live in `tests/internal/` with justification in docstrings. Do not expose private API.
 5. **Run full suite** (Step 5 + Step 7). Measure coverage and mutation score deltas.
-6. **Emit deliverables** as merge request.
+6. **Emit deliverables.**
 
 ## Test Categories
 
-### 7.1 — Internal Unit Tests
+### 7.1 — Internal Unit Tests — *Contextual (skip for trivial implementations)*
 
 Target pure functions in `utils/` and helpers that emerged during implementation.
 
@@ -54,7 +79,7 @@ class TestInternalTransformLogic:
         assert result == degenerate_expected
 ```
 
-### 7.2 — Edge Case Tests
+### 7.2 — Edge Case Tests — *Always produced when this step runs*
 
 Derived from actual branching and boundary conditions in code.
 
@@ -75,7 +100,7 @@ class TestEdgeCasesFromImplementation:
         # [Concurrency test harness]
 ```
 
-### 7.3 — Error Path Tests
+### 7.3 — Error Path Tests — *Contextual*
 
 Test every `except` block, early return, and error-raising path the spec didn't enumerate but the implementation handles.
 
@@ -96,7 +121,7 @@ class TestErrorPaths:
             instance.process(valid_input)
 ```
 
-### 7.4 — Performance Regression Tests
+### 7.4 — Performance Regression Tests — *Contextual (skip for trivial implementations)*
 
 Calibrated against *measured* implementation characteristics, not spec aspirations.
 
@@ -119,7 +144,7 @@ class TestPerformanceRegression:
         assert t_2n < t_n * 2.5
 ```
 
-### 7.5 — Defensive / Regression Guards
+### 7.5 — Defensive / Regression Guards — *Contextual*
 
 Pin specific bugs or near-bugs discovered or anticipated during implementation.
 
@@ -134,7 +159,7 @@ class TestRegressionGuards:
         assert len(instance.get_page(offset=total_items, limit=1)) == 0  # Not IndexError
 ```
 
-### 7.6 — Change Sensitivity Tests
+### 7.6 — Change Sensitivity Tests — *Contextual (skip for trivial implementations)*
 
 Small input perturbations that historically cause regressions. Encode known-fragile surfaces as explicit test cases.
 
@@ -158,7 +183,9 @@ class TestChangeSensitivity:
 | **Pin, don't patrol.** | Tests pin specific known-good behaviors. Snapshot testing is a last resort. |
 | **Bug discovery → escalate, don't fix.** | Consistent with framework escalation semantics: agents don't make backward transitions. Document the failing test and hand to human. |
 
-## Output — Merge Request to `{{BRANCH_NAME}}`
+## Output
+
+Test files are written to their codebase locations (`tests/step7/` or `tests/internal/`). Thinking artifacts (`TEST_EXTENSION_REPORT.md`, scope assessment) are written to `.current_session/` and `index.md` is updated. Part of the **implementation phase MR**.
 
 1. **Extended test suite** — clearly separated from Step 5 tests (in `tests/step7/` or `tests/internal/` as appropriate).
 2. **Test helpers and fixtures** needed for implementation-internal testing.

@@ -1,7 +1,6 @@
-# Prompt template: # Step 5 — Specification Tests
+# Prompt template: Step 5 — Specification Tests
 
-**Agent role:** Test Formalizer  
-**Orchestrator placeholders:** `{{REFINED_PROMPT_PATH}}`, `{{BASE_PY_PATH}}`, `{{STUBS_PATH}}`
+**Agent role:** Test Formalizer
 
 ---
 
@@ -11,15 +10,29 @@ You translate the specification into executable contracts. Your tests **define c
 
 Tests are immutable once merged. The implementing agent (Step 6) may only remove `@pytest.mark.skip` decorators as implementations land — no other modifications. They are upstream contracts. Get them right.
 
+Steps 1-5 produce a single MR (requirements definition phase). Steps 6-8 produce a single MR (implementation phase).
+
 ## Input Artifacts
+
+Read the `.current_session/` directory and `index.md` to discover prior thinking artifacts. You also receive code files from their codebase locations.
+
+**From `.current_session/` (thinking artifacts):**
 
 | Artifact | Source | Purpose |
 |---|---|---|
 | `refined_prompt.md` | Step 2 | The specification. Every numbered requirement must map to ≥1 test. Uncovered requirements are defects in your output. |
+| `structural_analysis.md` | Step 3 | May be LIGHT or FULL — informs whether cross-module boundaries exist. |
+
+**From codebase locations (code files produced by Step 4):**
+
+| Artifact | Source | Purpose |
+|---|---|---|
 | Interface files (`base.py`) | Step 4 | Public contracts. Your tests call these and only these. |
 | Stub implementations | Step 4 | Syntactically valid, raise `NotImplementedError`. Your tests must be importable and structurally correct against stubs — they will fail on `NotImplementedError` until Step 6. |
 | Domain types and error definitions | Step 4 | Use these types exactly. Do not redefine them. |
-| `__init__.py` manifests (Tier 0/1) | Codebase | Adjacent module surfaces for integration contract tests. |
+
+The orchestrator also provides:
+- **`__init__.py` manifests (Tier 0/1)** — Adjacent module surfaces for integration contract tests.
 
 **Test framework:** `pytest` exclusively. Hypothesis is permitted as a pytest plugin for property-based tests — no other test frameworks or runners.
 
@@ -27,7 +40,22 @@ Tests are immutable once merged. The implementing agent (Step 6) may only remove
 
 **Skip-by-default rule:** Every test must be marked `@pytest.mark.skip(reason="Awaiting implementation — Step 6")` as its **final decorator** (outermost). This ensures the test suite is CI-green on merge — stubs raise `NotImplementedError`, so un-skipped tests would fail and block the pipeline. The implementing agent in Step 6 removes skip markers as it delivers passing implementations. Skip removal is the only modification Step 6 is permitted to make to these test files.
 
-## Output — Merge Request
+## Scope Calibration
+
+Assess what exists in `.current_session/` and determine appropriate depth:
+- Review `structural_analysis.md` to determine if cross-module boundaries exist.
+- If no cross-module boundaries exist, skip `tests/integration/` entirely.
+- Assess whether property-based, performance, and mutation categories apply. The decision to skip a contextual category should be a single sentence, not a paragraph.
+
+State your scope assessment at the top of your output.
+
+## Non-Duplication Rule
+
+Do not reproduce information already present in `.current_session/` artifacts. Reference prior artifacts by filename and section. Traceability matrix references requirements by ID — do not quote full requirement text if it's already in `refined_prompt.md`. Your output should contain only NEW analysis, decisions, or artifacts.
+
+## Output
+
+Test files are written to their codebase locations under `tests/`. Thinking artifacts (traceability matrix, scope assessment) are written to `.current_session/` and `index.md` is updated. Part of the **requirements phase MR**.
 
 The MR contains:
 
@@ -42,7 +70,7 @@ The MR contains:
    │   └── test_<feature>_perf.py
    ├── mutation/              # Contextual
    │   └── mutation_config.json
-   ├── integration/           # Contextual
+   ├── integration/           # Contextual — skip entirely if no cross-module boundaries
    │   └── test_<adjacent_module>.py
    └── conftest.py            # Shared fixtures and factories
    ```
@@ -69,9 +97,9 @@ Location: `tests/unit/`, `tests/property/`, `tests/performance/`, `tests/mutatio
 | Directory | Category | Required? | Skip condition |
 |---|---|---|---|
 | `tests/unit/` | Unit tests | **OBLIGATORY** — always produced | Never skipped |
-| `tests/property/` | Property-based tests | Contextual | Skip if the interface has no stated invariants (idempotency, commutativity, monotonicity, conservation, etc.) and no input domain broad enough to benefit from generative testing. Justify omission in MR description. |
-| `tests/performance/` | Performance benchmarks | Contextual | Skip if `refined_prompt.md` contains zero quantitative NFRs (latency, throughput, memory bounds). Justify omission in MR description. |
-| `tests/mutation/` | Mutation config | Contextual | Skip if the module is non-critical glue code with no business logic worth mutating. Justify omission in MR description. |
+| `tests/property/` | Property-based tests | Contextual | Skip if no stated invariants and no broad input domain. Single-sentence justification. |
+| `tests/performance/` | Performance benchmarks | Contextual | Skip if zero quantitative NFRs. Single-sentence justification. |
+| `tests/mutation/` | Mutation config | Contextual | Skip if non-critical glue code with no business logic worth mutating. Single-sentence justification. |
 
 #### A.1 Unit Tests — `tests/unit/` · OBLIGATORY
 
@@ -210,7 +238,9 @@ An integration contract failure means the interfaces are inconsistent — an arc
 
 Location: `tests/integration/test_<adjacent_module>.py`
 
-**Required?** Contextual — skip if the module has no cross-module interface boundaries (pure leaf module with no dependencies on or dependents from other modules). Justify omission in MR description.
+**Required?** Skip entirely if the module has no cross-module interface boundaries. No lengthy justification needed — a single sentence noting the absence of cross-module boundaries is sufficient.
+
+**Anti-pattern: Do NOT write integration contract tests that merely verify type shapes already enforced by mypy, Pydantic validators, or linter rules.** Integration tests must test *semantic* contracts — behavioral expectations that static analysis cannot verify. Type conformance tests are redundant with the type system and parody the feature's actual complexity.
 
 ```python
 @pytest.mark.integration_contract
@@ -284,7 +314,7 @@ When an integration contract test fails during Step 6 execution:
 
 ## Traceability Matrix
 
-Every requirement in `refined_prompt.md` must appear. A missing row is a defect.
+Every requirement in `refined_prompt.md` must appear. A missing row is a defect. Reference requirements by ID — do not quote full requirement text.
 
 ```markdown
 | Requirement | Test(s) | Category | Status |
@@ -304,12 +334,12 @@ Every requirement in `refined_prompt.md` must appear. A missing row is a defect.
 - [ ] Tests are deterministic and runnable in CI against stubs (fail on `NotImplementedError` when skip is removed, not on import/syntax).
 - [ ] Every acceptance criterion from `refined_prompt.md` has ≥1 corresponding test.
 - [ ] `tests/unit/` exists and covers every functional requirement with nominal, boundary, and error path tests. This is non-negotiable.
-- [ ] `tests/property/` exists if any interface declares invariants or has a non-trivial input domain. Omission justified in MR description.
-- [ ] `tests/performance/` exists if `refined_prompt.md` specifies any quantitative NFR. Omission justified in MR description.
-- [ ] `tests/mutation/` config exists if the module contains business logic worth mutating (≥70% kill rate target, ≥95% for critical paths). Omission justified in MR description.
-- [ ] `tests/integration/` exists if the module has cross-module interface boundaries. Contracts are non-vacuous: assert shape AND ≥1 semantic property. Omission justified in MR description.
+- [ ] `tests/property/` exists if any interface declares invariants or has a non-trivial input domain. Omission justified in single sentence.
+- [ ] `tests/performance/` exists if `refined_prompt.md` specifies any quantitative NFR. Omission justified in single sentence.
+- [ ] `tests/mutation/` config exists if the module contains business logic worth mutating (≥70% kill rate target, ≥95% for critical paths). Omission justified in single sentence.
+- [ ] `tests/integration/` exists if the module has cross-module interface boundaries. Skipped entirely if no cross-module boundaries exist.
 - [ ] All tests use factory fixtures; zero concrete implementation references.
-- [ ] Traceability matrix is complete — no uncovered requirements.
+- [ ] Traceability matrix is complete — no uncovered requirements. References by ID only.
 - [ ] If any integration contract is `BLOCKING`, the MR description declares it.
 - [ ] MR description includes a **"Contextual categories omitted"** section listing any skipped category with justification, or states "None — all categories produced."
 
