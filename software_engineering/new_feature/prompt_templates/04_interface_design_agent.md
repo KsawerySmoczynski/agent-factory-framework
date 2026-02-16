@@ -75,14 +75,31 @@ Use Pydantic models or dataclasses for data shapes where it aids clarity.
 
 ### C. Abstract Base Classes / Protocols
 
-Write `base.py` files. **Deliberate overspecification:** Docstrings here are intentionally verbose — full behavioral contracts, pre/post-conditions, edge case expectations, acceptance criteria cross-references. This is by design. These serve as the implementation blueprint for Step 6. Step 8 will trim them to match actual complexity after implementation is complete.
+Write `base.py` files. **Deliberate overspecification:** Method-level docstrings are intentionally verbose — full behavioral contracts, pre/post-conditions, edge case expectations, acceptance criteria cross-references. This is by design. These serve as the implementation blueprint for Step 6. Step 8 will trim them to match actual complexity after implementation is complete.
+
+**Strict module-level docstring template (mandatory).** Every `base.py` must begin with a structured module docstring following this exact template. This format enables automated extraction via `tools/inspect_interface.py` and Grep multiline patterns, providing agents with compressed Tier 1 context (~100-150 tokens) without reading the full file (~300-800 tokens).
 
 ```python
 """
-Module: [module_name]
-Interface: [interface_name]
-Responsibility: [single sentence]
-Traceability: [FR-X, NFR-Y]
+Module: [module_name].base
+Responsibility: [single sentence, no "and"]
+
+Interfaces:
+    [ClassName]: [one-line description]
+        [method_name]([param]: [Type], ...) -> [ReturnType]
+        [method_name]([param]: [Type], ...) -> [ReturnType]
+
+Error Types:
+    [ErrorName]([field]: [Type], ...): [when raised]
+
+Domain Types:
+    [TypeName]([field]: [Type], ...): [what it represents]
+
+Dependencies:
+    [module_name].[InterfaceName]: [why needed]
+
+Design Notes:
+    [non-obvious decisions or constraints consumers should know]
 """
 
 from abc import ABC, abstractmethod
@@ -119,6 +136,8 @@ class InterfaceName(ABC):
         ...
 ```
 
+**Two-layer documentation:** The module-level docstring serves as a compressed index (Tier 0.5/1). The class/method-level docstrings below it provide full behavioral contracts (Tier 1 full). Agents reading only the module docstring know what the module offers and how to call it. They read individual class/method docstrings only when they need the full behavioral contract for implementation or test writing.
+
 ### D. Stub Implementations
 
 For each interface, produce `impl.py`:
@@ -145,34 +164,14 @@ class InterfaceNameImpl(InterfaceName):
 - Fully type-annotated — every arg, every return, no `Any` unless genuinely polymorphic.
 - Docstrings sufficient for test-writing without access to the refined prompt.
 
-### E. Module Manifests (`__init__.py`)
+### E. Module Manifests (`__init__.py`) and CLAUDE.md
 
-Every `__init__.py` is a **manifest** — English description + table of contents + API summary. An agent reading ONLY `__init__.py` files can:
+**Role separation:** The primary Tier 0 navigation map lives in root `CLAUDE.md` (auto-loaded at session start by Claude Code, zero tool-call cost). `__init__.py` files handle Python re-exports and brief descriptions — they don't need to duplicate the full manifest that `CLAUDE.md` and the structured `base.py` docstring already provide.
 
-1. Understand what every module does.
-2. Use every public API.
-3. Navigate to the right file for any concept.
-4. Reconstruct the dependency graph.
+`__init__.py` should be concise:
 
 ```python
-"""
-Module: [module_name]
-Responsibility: [single sentence]
-
-Submodules:
-    - base: Interface definitions (InterfaceName, DomainType, SpecificError)
-    - implementation_v1: [Brief description of this variant]
-
-Public API:
-    - InterfaceName: [What + when to use]
-    - DomainType: [What it represents]
-    - create_interface_name(**config) -> InterfaceName: [Factory if applicable]
-
-Dependencies:
-    - [module_x]: [Why, via what interface]
-
-Design notes: [Non-obvious decisions or constraints consumers should know]
-"""
+"""[module_name] — [one-sentence responsibility]."""
 
 from .base import InterfaceName, DomainType, SpecificError
 

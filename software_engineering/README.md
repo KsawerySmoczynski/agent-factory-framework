@@ -7,3 +7,13 @@ Proof-carrying code as the replacement for code review. The hard part shifts to 
 ## Philosophy
 
 Architecture is the product; code is ephemeral. The durable engineering artifact is the specification — interface graphs, invariant declarations, contract test suites, module manifests. Implementations are regenerable from specs. Version control tracks *specification changes*; code is a derived artifact.
+
+## Plugins
+In order to make everything work install plugins:
+* pyright-lsp
+* code-review
+* pr-review-toolkit
+
+### To research
+* claude-md-management
+* [Awesome claude code plugins](https://github.com/ComposioHQ/awesome-claude-plugins)

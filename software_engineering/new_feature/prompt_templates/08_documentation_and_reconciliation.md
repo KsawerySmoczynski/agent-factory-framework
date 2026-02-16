@@ -12,7 +12,7 @@ Steps 1-5 produce a single MR (requirements definition phase). Steps 6-8 produce
 
 This is the final step of an 8-step agent-orchestrated development pipeline. Prior steps produced, in order: raw requirements → refined specification → structural analysis → interface design (base.py + stubs) → specification tests (behavioral 5a + integration contracts 5b) → implementation → implementation-derived tests. You now reconcile the full artifact chain.
 
-The codebase follows a **tiered context model**: Tier 0 (`__init__.py` manifests — the navigation map), Tier 1 (interfaces + docstrings + contract tests), Tier 2 (full source, module-private). Your primary responsibility is Tier 0 and Tier 1 accuracy. If those layers lie, every future agent session built on them inherits the lie.
+The codebase follows a **tiered context model**: Tier 0 (root `CLAUDE.md` module map — auto-loaded at session start), Tier 0.5 (structured `base.py` module docstrings — extractable via `/interface`), Tier 1 (full `base.py` behavioral contracts + contract tests), Tier 2 (full source, module-private). Your primary responsibility is Tier 0 and Tier 1 accuracy. If those layers lie, every future agent session built on them inherits the lie.
 
 ---
 
@@ -51,21 +51,25 @@ Do not reproduce analysis already present in `.current_session/` artifacts. Refe
 
 ## Procedure
 
-### A. Manifest Reconciliation (Tier 0 Truth)
+### A. CLAUDE.md Module Map Reconciliation (Tier 0 Truth)
 
-For every `__init__.py` in affected modules, verify four properties:
+The root `CLAUDE.md` is auto-loaded at every agent session start. If it lies, every future agent inherits the lie.
 
-1. **Description accuracy.** Does the module description match what was built? Implementation may have introduced submodules, utilities, or types absent from original structural analysis.
-2. **API surface completeness.** Every symbol in `__all__` is documented. Every documented symbol exists. No orphans in either direction.
-3. **Dependency accuracy.** If implementation introduced a new dependency on another module, the manifest states it.
-4. **Navigability.** An agent reading only `__init__.py` files can locate any concept without opening implementation files.
+1. **Run verification:** `python tools/inspect_interface.py . --only-base --verify=CLAUDE.md` to detect drift between the Module Map and actual code.
+2. **Update Module Map entries** for every affected module: one-line responsibility, API signatures, error types, dependencies.
+3. **Add new modules** that emerged during implementation but weren't in the original structural analysis.
+4. **Remove deleted modules** that no longer exist.
 
-Annotate every change with reconciliation provenance:
+For every `__init__.py` in affected modules, also verify:
 
-```python
-# RECONCILIATION: Added utils/cache.py — emerged during Step 6 implementation
-# to satisfy NFR-2 latency requirement. Not in original structural analysis.
-```
+5. **Re-export completeness.** Every symbol in `__all__` exists. Every public symbol is in `__all__`.
+6. **Dependency accuracy.** If implementation introduced a new dependency, both `CLAUDE.md` and `__init__.py` reflect it.
+
+### A2. Structured Docstring Verification
+
+Verify that every `base.py` starts with a module-level docstring following the strict template (Module, Responsibility, Interfaces, Error Types, Domain Types, Dependencies, Design Notes). If any deviate, fix them. This format enables `/interface` and Grep-based extraction — if it's broken, Tier 0.5 access breaks for all future agents.
+
+Run `python tools/inspect_interface.py . --only-base --module-doc` and verify the output is clean and complete.
 
 ### B. Docstring Trimming (Entropy Reduction)
 
@@ -214,10 +218,12 @@ Codebase changes (`__init__.py` manifests, `base.py` docstring trims) are writte
 
 All must hold for MR to be mergeable:
 
-- [ ] Tier 0 manifests reflect implementation — no contradiction between any `__init__.py` and the code it describes.
+- [ ] Root `CLAUDE.md` Module Map reflects implementation — `python tools/inspect_interface.py . --only-base --verify=CLAUDE.md` reports no drift.
+- [ ] Every `base.py` starts with a structured module docstring following the strict template.
+- [ ] `__init__.py` re-exports are complete — every public symbol is in `__all__`.
 - [ ] `SPEC_VS_RESULT.md` has an entry for every numbered requirement in `refined_prompt.md`, each classified.
-- [ ] No code changes beyond docstrings, annotations, and manifest descriptions. Zero behavioral change.
-- [ ] Docstrings have been trimmed to match actual implementation complexity — no overspecified contracts remaining for simple methods.
+- [ ] No code changes beyond docstrings, annotations, CLAUDE.md, and `__init__.py` re-exports. Zero behavioral change.
+- [ ] Method-level docstrings have been trimmed to match actual implementation complexity — no overspecified contracts remaining for simple methods.
 - [ ] Every deviation flagged as needing spec revision includes suggested wording.
 - [ ] Every refactoring proposal (if any) is classified (safe / interface-touching / cross-cutting).
 - [ ] No entry marked "TBD." If unknown, state "Unknown — requires investigation: [describe what investigation resolves it]."

@@ -41,11 +41,22 @@ State chosen mode and justification at the top of output.
 
 Do not reproduce information already present in `.current_session/` artifacts. Reference prior artifacts by filename and section. Do not reproduce the refined spec's requirements — reference them by ID. Your output should contain only NEW analysis, decisions, or artifacts.
 
+## Context Loading Protocol
+
+Load context progressively, cheapest first:
+
+1. **Tier 0 (FREE):** Root `CLAUDE.md` module map is already in your context. Use it to identify all modules in the feature's dependency subgraph.
+2. **Tier 0.5 (~100 tokens/module):** Use `/interface <module>` or `python tools/inspect_interface.py <module> --depth=1` for each adjacent module's API surface.
+3. **Tier 1 (~300-800 tokens/module):** Read `base.py` only for modules at integration boundaries where you need full behavioral contracts for gap analysis.
+4. **Tier 2 (Refactor mode only):** Read implementation files only for the module being refactored — this is your throwaway exploratory pass.
+
+**Do not read implementation files for structural analysis.** You are analyzing structure, not code. Tier 0 + Tier 0.5 should suffice for most structural work. Tier 1 is needed only for integration point analysis.
+
 ## Procedure
 
 ### A. System Topology Mapping
 
-From Tier 0 manifests, construct:
+From `CLAUDE.md` module map (Tier 0, already in context), construct:
 
 - **Node inventory:** Which existing modules are relevant. For each: stability assessment (stable / volatile / poorly-specified).
 - **Edge inventory:** Dependency directions between nodes. Classify each edge: data flow, control flow, event, shared-state. Flag any implicit coupling not visible from interfaces.
