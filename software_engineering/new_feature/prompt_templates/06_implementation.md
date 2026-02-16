@@ -55,11 +55,36 @@ Docstrings from Step 4 interfaces are your implementation blueprint — implemen
 
 **You operate under strict information access control:**
 
-- **Tier 0 (Manifest graph):** You can see `__init__.py` of every relevant module. This is your map.
-- **Tier 1 (Interfaces + contracts):** You can see `base.py`, docstrings, and integration contract tests for modules you depend on. You code *against* these without knowing their internals.
-- **Tier 2 (Full source):** You see full source ONLY for the module you are implementing. You never see Tier 2 of any other module.
+- **Tier 0 (Project map, FREE):** Root `CLAUDE.md` is auto-loaded at session start. It contains the module inventory, one-line API signatures, dependency graph, and error types. This is your map. **~15-25 tokens per module, zero tool calls.**
+- **Tier 0.5 (Compressed interfaces):** Use `/interface <module>` or `python tools/inspect_interface.py <module> --depth=1` to get class names, method signatures, and type annotations without behavioral contracts. **~100 tokens per module.**
+- **Tier 1 (Interfaces + contracts):** Read `base.py` files for full behavioral contracts: pre/post-conditions, invariants, error semantics. You code *against* these without knowing their internals. **~300-800 tokens per module.**
+- **Tier 2 (Full source):** Read implementation files ONLY for the module you are implementing. You never see Tier 2 of any other module. **~1,500-3,000 tokens per module.**
 
 **If you need information about another module that isn't available at Tier 1, you do not have it. Do not guess. Do not assume. Escalate if the interface is insufficient.**
+
+### Context Loading Protocol
+
+Load context progressively, cheapest first:
+
+**Phase 0 — Orient (FREE, already loaded):**
+`CLAUDE.md` module map is in your context. Identify which modules are in your dependency subgraph. Skip all modules not relevant to your task.
+
+**Phase 1 — Survey adjacent modules (Tier 0.5, ~seconds):**
+For each module you depend on, run `/interface <module>` to understand its API surface. This costs ~100 tokens per module. At this point you know *what* you can call.
+
+**Phase 2 — Load contracts for direct dependencies (Tier 1, selective):**
+- If you need one method's full behavioral contract: use LSP hover (if available, ~30-50 tokens) or read just that method from `base.py`.
+- If you need the complete interface: read the full `base.py` (~300-800 tokens).
+- Read the `base.py` structured module docstring first (`--module-doc` flag) — it may be sufficient without reading the full file.
+
+**Phase 3 — Implement (Tier 2, own module only):**
+Read your own module's `base.py` (full — this is your implementation blueprint), existing implementation (if refactor), and test suite from Step 5.
+
+**Anti-patterns:**
+- DON'T read all `base.py` files "to understand the system" — use the Module Map.
+- DON'T read implementation files of adjacent modules — ever.
+- DON'T re-read files already in your context after a tool call.
+- DON'T use Read when `/interface` or Grep can answer your specific question.
 
 ## Procedure
 

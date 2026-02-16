@@ -1,3 +1,15 @@
+# Step 0: CLAUDE.md Generation (One-Time Setup)
+
+**Input:** Existing codebase.
+
+**Output:** Root `CLAUDE.md` file — the Tier 0 project map.
+
+Run once at project setup using the `00_claude_md_generation.md` prompt template. The generated `CLAUDE.md` contains the Module Map (all modules, their API signatures, dependencies, error types), test structure conventions, the Context Loading Protocol, and available tooling references.
+
+Claude Code auto-loads `CLAUDE.md` at session start, giving every agent free Tier 0 context at zero tool-call cost. Step 8 (Reconciliation) re-validates and updates this file after each pipeline run.
+
+**Tool support:** `python tools/inspect_interface.py . --only-base --depth=1` generates the raw module inventory. The `/interface` skill provides a convenient wrapper.
+
 # Step 1: Raw Input (Human)
 
 **Input:** Nothing formal.
@@ -16,7 +28,29 @@ Include anything that *might* matter: related components in the existing system,
 
 **Output:** `refined_prompt.md`, question artifacts — all written to `.current_session/`, `index.md` initialized and populated.
 
-**Session bootstrap:** This is the first agent step. Initialize `index.md` in `.current_session/` — register `raw_prompt.md` as the first entry, then append your own artifacts as you produce them.
+**Session bootstrap:** This is the first agent step. Initialize `index.md` in `.current_session/` using the structured format below — register `raw_prompt.md` as the first entry, then append your own artifacts as you produce them.
+
+**Structured `index.md` format:**
+
+```markdown
+# Session Index
+
+## Artifacts
+
+| File | Step | Type | Est. Tokens | Summary |
+|---|---|---|---|---|
+| raw_prompt.md | 1 | thinking | ~500 | Raw requirements brain dump |
+| refined_prompt.md | 2 | thinking | ~1200 | Validated specification with FR/NFR/AC |
+
+## Requirements Map
+- FR-1: [short description] → refined_prompt.md §Functional
+- NFR-1: [short description] → refined_prompt.md §Non-Functional
+
+## Key Decisions
+- [Decision]: [chosen option] (source: [artifact §section])
+```
+
+This structured format enables downstream agents to selectively load artifacts. The "Est. Tokens" column lets agents budget their context. The "Requirements Map" lets agents find specific requirements without scanning all artifacts. Each step appends its entries to all three sections.
 
 **Agent role:** Spec Refiner
 
@@ -97,9 +131,11 @@ module/
 
 ```
 
-Every `__init__.py` is a **manifest**, not boilerplate. It describes what each child contains and what it does. An agent reading only `__init__.py` files can navigate the full project without opening any implementation file. This is the foundation of the tiered context model.
+Every `__init__.py` handles Python re-exports and brief descriptions. The primary Tier 0 navigation map lives in root `CLAUDE.md` (auto-loaded at session start). Every `base.py` starts with a **structured module docstring** following a strict template (Module, Responsibility, Interfaces, Error Types, Domain Types, Dependencies, Design Notes) that enables automated extraction via `tools/inspect_interface.py` and Grep multiline patterns. This structured docstring is the foundation of the tiered context model — it allows agents to read compressed interface metadata (~100-150 tokens) instead of the full file (~300-800 tokens).
 
 Stub implementations must be syntactically valid, type-annotated, and raise `NotImplementedError` with a docstring describing the intended behavior. The stubs *are* the spec in code form — they tell the test-writing agent what to test against without revealing implementation strategy.
+
+**Test directory convention:** Tests live in `tests/` mirroring the repository structure, with subdirectories by test function: `tests/unit/` for behavioral tests (Step 5a, Step 7), `tests/integration/` for contract tests (Step 5b). Test files follow `test_<module_name>.py` naming. This structure is documented in root `CLAUDE.md` for agent discovery.
 
 # Step 5: Specification Tests
 
@@ -153,11 +189,29 @@ These encode: "module A communicates with module B via interface W, sending data
 
 The implementing agent does *not* see the entire codebase. Context is stratified to minimize pollution and maximize focused reasoning:
 
-- **Tier 0 — Manifest graph.** What exists, how it connects. Fits in any context window. Lives in `__init__.py` files. This is the map. An orchestrator agent operates at Tier 0 to decide which modules need work and how to delegate.
-- **Tier 1 — Interfaces + docstrings + contract tests.** Enough to implement *against* without seeing internals. The implementing agent sees Tier 1 for all modules it must *interact with*.
-- **Tier 2 — Full source.** Loaded only by the agent that *owns* that module. The implementing agent sees Tier 2 only for the module it is actively implementing. No other agent ever sees this.
+- **Tier 0 — Project map.** What exists, how it connects. Lives in root `CLAUDE.md`, auto-loaded at session start at zero cost. Contains module inventory, one-line API signatures, dependency graph, error types. An orchestrator agent operates at Tier 0 to decide which modules need work and how to delegate. **~15-25 tokens per module.**
+- **Tier 0.5 — Compressed interfaces.** Class names + method signatures + type annotations without behavioral contracts. Extracted via `/interface <module>` or `python tools/inspect_interface.py <module> --depth=1`. Used when you need to know *what* a module offers without reading *how* it behaves. **~100 tokens per module.**
+- **Tier 1 — Interfaces + docstrings + contract tests.** Full behavioral contracts in `base.py`: pre/post-conditions, invariants, error semantics. Enough to implement *against* without seeing internals. Accessed by reading `base.py` files. The implementing agent sees Tier 1 for all modules it must *interact with*. **~300-800 tokens per module.**
+- **Tier 2 — Full source.** Loaded only by the agent that *owns* that module. The implementing agent sees Tier 2 only for the module it is actively implementing. No other agent ever sees this. **~1,500-3,000 tokens per module.**
 
 For cross-module features: the orchestrator operates at Tier 0, delegates to per-module implementers at Tier 1 boundary, each implementer loads Tier 2 only for its own module. This is information-theoretic access control — agents can't hallucinate interactions with internals they never saw.
+
+### Context Loading Protocol (Cross-Cutting)
+
+All pipeline agents should load context progressively, cheapest first:
+
+1. **Tier 0 (FREE):** `CLAUDE.md` module map is already in context. Use it to identify relevant modules.
+2. **Tier 0.5 (~100 tokens/module):** Use `/interface <module>` for adjacent module API surfaces.
+3. **Tier 1 (~300-800 tokens/module):** Read `base.py` only for modules you directly depend on and need full behavioral contracts.
+4. **Tier 2 (~1,500-3,000 tokens/module):** Read implementation only for the module you own.
+
+**Anti-patterns:**
+- Don't read all `base.py` files "to understand the system" — use the Module Map.
+- Don't read implementation files of modules you don't own.
+- Don't re-read files already in your context.
+- Don't use Read when Grep or `/interface` can answer your specific question.
+
+**Recovery:** If your current tier lacks information you need: try `/interface` first (cheapest), then Read `base.py` (moderate), then escalate to human if the interface is genuinely insufficient.
 
 ### Failure Handling During Implementation
 
@@ -232,10 +286,12 @@ These include:
 
 The agent performs a full read-through of the completed work and:
 
-1. **Enhances `__init__.py` manifests** to reflect what was actually built, not what was planned. The Tier 0 map must be accurate post-implementation.
-2. **Trims docstrings to match actual complexity.** Step 4 deliberately overspecified docstrings to serve as implementation blueprints. Now that implementation is complete, trim them to match actual implementation complexity — remove redundant pre/post-conditions that merely restate what the code obviously does, align verbosity with the code's actual complexity, improve information density. This is the entropy-reduction pass.
-3. **Identifies spec-vs-result mismatches.** Where did the implementation deviate from the refined prompt? These deviations are not necessarily bugs — they're learning. Document them explicitly so future pipeline runs benefit.
-4. **Proposes refactoring candidates.** Functions that should be extracted and generalized for reuse across implementations. Utility files that should be combined or split. Dead code. But: **does not execute refactors in this step.** Proposals only, as a separate MR or annotated document. Refactoring is a separate pipeline run.
+1. **Updates root `CLAUDE.md` module map** to reflect what was actually built. Run `python tools/inspect_interface.py . --only-base --verify=CLAUDE.md` to detect drift, then update the Module Map section. The Tier 0 map must be accurate post-implementation — every future agent session depends on it.
+2. **Enhances `__init__.py` re-exports** to include any new public symbols.
+3. **Verifies `base.py` structured docstrings** follow the strict template (Module, Responsibility, Interfaces, Error Types, Domain Types, Dependencies, Design Notes). Fix any that don't conform.
+4. **Trims method-level docstrings to match actual complexity.** Step 4 deliberately overspecified docstrings to serve as implementation blueprints. Now that implementation is complete, trim them to match actual implementation complexity — remove redundant pre/post-conditions that merely restate what the code obviously does, align verbosity with the code's actual complexity, improve information density. This is the entropy-reduction pass.
+5. **Identifies spec-vs-result mismatches.** Where did the implementation deviate from the refined prompt? These deviations are not necessarily bugs — they're learning. Document them explicitly so future pipeline runs benefit.
+6. **Proposes refactoring candidates.** Functions that should be extracted and generalized for reuse across implementations. Utility files that should be combined or split. Dead code. But: **does not execute refactors in this step.** Proposals only, as a separate MR or annotated document. Refactoring is a separate pipeline run.
 
 **Proportionality:** Scale output to feature complexity. For small features: `SPEC_VS_RESULT.md` can be a brief table. Skip `REFACTOR_PROPOSALS.md`, `oncall_notes.md`, and `STRUCTURAL_RETROSPECTIVE.md` if nothing warrants them. `PIPELINE_FEEDBACK.md` is always produced (even if brief) — it feeds process improvement.
 
